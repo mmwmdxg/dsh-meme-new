@@ -1,0 +1,11 @@
+node_modules/
+__pycache__/
+*.pyc
+.DS_Store
+
+# 旧版 Windows 路径 bug 会在启动目录留下 .dsh/ 设置文件(现在设置写在 ~/.dsh)
+.dsh/
+
+# 打包产物(可重新生成,不入库)
+*.tgz
+*-source.zip

@@ -1,0 +1,68 @@
+{
+  "name": "dsh-meme",
+  "version": "0.1.1",
+  "description": "DeepSeek Harness 表情包插件：输入框一键发图（图库/情绪多选筛选、悬浮大图预览）、多图库开关、情绪与关键词搜图、AI 学图，图库可从市场一键安装或导入/导出 ZIP。",
+  "icon": "icon.jpg",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mmwmdxg/dsh-meme-new.git"
+  },
+  "homepage": "https://github.com/mmwmdxg/dsh-meme-new",
+  "bugs": {
+    "url": "https://github.com/mmwmdxg/dsh-meme-new/issues"
+  },
+  "type": "module",
+  "main": "index.js",
+  "files": [
+    "anim.js",
+    "client.js",
+    "cordis.patch.yml",
+    "docs/",
+    "icon.jpg",
+    "index.js",
+    "locale/",
+    "memes.js",
+    "memes/",
+    "panel.html",
+    "AGENTS.md",
+    ".dsh/skills/"
+  ],
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-connection",
+        "@deepseek-ai/dsh-client-ui-settings"
+      ],
+      "platform": "web"
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-tools": "*"
+  },
+  "keywords": [
+    "dsh-plugin",
+    "dsh-meme",
+    "deepseek-harness",
+    "meme",
+    "emoticon",
+    "sticker"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "pretest": "node scripts/stub-dsh-tools.mjs",
+    "test": "node --test \"test/*.test.mjs\""
+  }
+}

@@ -1,0 +1,26 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # engines 要求 >= 22.13:node:sqlite 从 22.13 起不再需要 --experimental-sqlite
+          node-version: '22.13'
+
+      # 不装依赖:插件零第三方运行依赖;peer 的 @deepseek-ai/dsh-tools 由
+      # pretest 脚本生成存根(scripts/stub-dsh-tools.mjs)补上。
+      - name: 跑测试
+        run: npm test
+
+      # 顺带钉住发布内容:files 白名单写错时这里能看出少了/多了什么
+      - name: 检查发布包内容
+        run: npm pack --dry-run

@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>dsh-meme — 跟 AI 斗图</title>
+  <meta name="description" content="DeepSeek Harness 表情包插件。点一张就发出去，模型只写文字，对话里直接出图。" />
+  <meta property="og:title" content="dsh-meme" />
+  <meta property="og:description" content="跟 AI 斗图。找得到、发得出、学得会。" />
+  <meta property="og:image" content="./hero-banner-v4.jpg" />
+  <link rel="icon" href="./dafeiyu/ok.jpg" />
+  <style>
+    :root {
+      --paper: #f8fbff;
+      --panel: #ffffff;
+      --ink: #17345f;
+      --blue: #386ae8;
+      --accent: #4772b8;
+      --mute: #647895;
+      --line: #dce7f6;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; background: var(--paper); color: var(--ink); }
+    body {
+      font-family: "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", ui-sans-serif, system-ui, sans-serif;
+      min-height: 100%;
+      -webkit-font-smoothing: antialiased;
+    }
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background:
+        radial-gradient(900px 620px at 90% 10%, rgba(99, 160, 255, .13), transparent 65%),
+        linear-gradient(180deg, #ffffff 0%, rgba(244, 249, 255, .5) 100%);
+    }
+    .page { position: relative; z-index: 1; }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 1.35rem 1.5rem;
+      max-width: 72rem;
+      margin: 0 auto;
+    }
+    .stars, .lang {
+      display: inline-flex;
+      align-items: center;
+      gap: .4rem;
+      height: 2rem;
+      padding: 0 .75rem;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--ink);
+      text-decoration: none;
+      font-size: .78rem;
+      background: rgba(255,255,255,.9);
+    }
+    .lang { padding: 0 .22rem; }
+    .lang button {
+      appearance: none; border: 0; background: 0; color: var(--mute);
+      font: inherit; padding: .18rem .55rem; border-radius: 999px; cursor: pointer;
+    }
+    .lang button[aria-pressed="true"] { background: #eaf1ff; color: #285bce; }
+    .stage {
+      display: grid;
+      gap: 2.5rem;
+      padding: 2.2rem 1.5rem 5rem;
+      max-width: 68rem;
+      margin: 0 auto;
+      align-items: center;
+    }
+    @media (min-width: 900px) {
+      .stage { grid-template-columns: 1.05fr .95fr; min-height: min(48rem, calc(100svh - 5rem)); }
+    }
+    .kicker {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      color: var(--accent);
+      letter-spacing: .18em;
+      font-size: .72rem;
+      text-transform: uppercase;
+      margin: 0 0 .4rem;
+    }
+    .poster {
+      margin: 0;
+      font-weight: 750;
+      letter-spacing: -.04em;
+      line-height: 1.12;
+      font-size: clamp(3.4rem, 8vw, 5.8rem);
+    }
+    .poster em {
+      font-style: normal;
+      color: var(--blue);
+      display: block;
+    }
+    .sub {
+      margin: 1rem 0 0;
+      font-size: 1.15rem;
+      font-weight: 700;
+      letter-spacing: .02em;
+    }
+    .lead { margin: .7rem 0 0; color: var(--mute); max-width: 25rem; line-height: 1.8; }
+    .cmd { margin: 1.4rem 0 0; color: var(--ink); font-size: .85rem; line-height: 1.7; }
+    .meta { margin: .85rem 0 0; color: var(--mute); font-size: .82rem; }
+    .meta a { color: var(--accent); }
+    .fight {
+      position: relative;
+      min-height: 28rem;
+    }
+    .phone {
+      width: min(100%, 18.5rem);
+      margin: 2.2rem auto 0;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 1.7rem;
+      padding: .85rem .85rem 1rem;
+      box-shadow: 0 24px 65px rgba(53,94,157,.12);
+      position: relative;
+      z-index: 2;
+    }
+    .phone-bar {
+      display: flex; justify-content: space-between; align-items: center;
+      color: var(--mute); font-size: .72rem; margin-bottom: .7rem;
+    }
+    .dot { width: .45rem; height: .45rem; border-radius: 50%; background: var(--blue); }
+    .thread { min-height: 16.5rem; display: flex; flex-direction: column; gap: .55rem; justify-content: flex-end; }
+    .hint-tap { color: var(--mute); font-size: .82rem; text-align: center; padding: 3.4rem .6rem; }
+    .bubble {
+      align-self: flex-end;
+      max-width: 86%;
+      animation: slap .38s cubic-bezier(.2,1.4,.3,1);
+    }
+    .bubble img {
+      display: block; width: 9.5rem; height: 9.5rem; object-fit: cover;
+      border-radius: .85rem; background: #fff;
+    }
+    .bubble p {
+      margin: .35rem 0 0; color: var(--mute); font-size: .75rem; text-align: center;
+    }
+    .sticker {
+      position: absolute;
+      width: 6.1rem; height: 6.1rem; padding: 0; border: 1px solid var(--line);
+      border-radius: 1rem; overflow: hidden; cursor: pointer;
+      box-shadow: 0 12px 28px rgba(53,94,157,.14);
+      background: #fff;
+      z-index: 3;
+      transition: transform .2s ease;
+    }
+    .sticker img { width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none; }
+    .sticker:hover, .sticker:focus-visible { transform: scale(1.08) rotate(0deg) !important; z-index: 5; }
+    .s1 { top: 0; left: 4%; transform: rotate(-11deg); }
+    .s2 { top: 8%; right: 2%; transform: rotate(8deg); }
+    .s3 { top: 38%; left: -2%; transform: rotate(7deg); }
+    .s4 { bottom: 18%; right: -1%; transform: rotate(-8deg); }
+    .s5 { bottom: 2%; left: 18%; transform: rotate(5deg); }
+    @media (max-width: 899px) {
+      .stage { gap: 3.5rem; }
+      .fight { min-height: 26rem; max-width: 30rem; width: 100%; margin: 0 auto; }
+      .sticker { width: 4.6rem; height: 4.6rem; }
+      .s3, .s5 { display: none; }
+    }
+    @media (prefers-reduced-motion: no-preference) {
+      .s1 { animation: drift 5.5s ease-in-out infinite; }
+      .s2 { animation: drift 6.2s ease-in-out infinite reverse; }
+      .s4 { animation: drift 7s ease-in-out infinite; }
+    }
+    @keyframes drift {
+      50% { translate: 0 -8px; }
+    }
+    @keyframes slap {
+      from { transform: translateY(16px) scale(.86); opacity: 0; }
+      to { transform: none; opacity: 1; }
+    }
+    .rest { max-width: 48rem; margin: 0 auto; padding: 0 1.5rem 4rem; }
+    .shot {
+      border-radius: 1.1rem; overflow: hidden; border: 1px solid var(--line);
+      margin: 0 0 2.4rem;
+    }
+    .shot img { display: block; width: 100%; }
+    .packs h2 { margin: 0 0 .4rem; font-size: 1.2rem; }
+    .hint { margin: 0 0 1rem; color: var(--mute); font-size: .86rem; line-height: 1.5; }
+    .hint code { color: var(--blue); font-family: ui-monospace, Menlo, Consolas, monospace; }
+    .grid { display: grid; gap: .85rem; }
+    .pack {
+      display: grid; gap: .7rem; width: 100%; padding: .7rem;
+      border-radius: 1rem; border: 1px solid var(--line); background: var(--panel);
+      color: inherit; text-align: left; cursor: pointer; font: inherit;
+    }
+    .pack:hover { border-color: #8bb0f6; box-shadow: 0 8px 24px rgba(53,94,157,.08); }
+    .mosaic {
+      display: grid; grid-template-columns: repeat(6, 1fr); gap: 3px;
+      border-radius: .7rem; overflow: hidden; background: #f3f7fd;
+      min-height: 4.6rem;
+    }
+    .mosaic img { width: 100%; aspect-ratio: 1; object-fit: cover; display: block; }
+    .mosaic img:nth-child(n+7) { display: none; }
+    @media (max-width: 560px) {
+      .mosaic { grid-template-columns: repeat(4, 1fr); }
+      .mosaic img:nth-child(n+5) { display: none; }
+    }
+    .pack strong { display: block; font-size: .98rem; }
+    .pack p { margin: .25rem 0 0; color: var(--mute); font-size: .82rem; }
+    .pack .row { margin-top: .4rem; font-size: .75rem; color: var(--accent); }
+    .empty { color: var(--mute); font-size: .88rem; }
+    .ghost-mosaic { height: 4.6rem; background: repeating-linear-gradient(90deg,#eaf1fb 0 16%,#f5f8fd 0 20%); }
+    .modal {
+      position: fixed; inset: 0; z-index: 20;
+      background: rgba(23,52,95,.32); backdrop-filter: blur(6px); display: grid; place-items: center;
+      padding: 1rem;
+    }
+    .modal[hidden] { display: none; }
+    .sheet {
+      width: min(100%, 42rem); max-height: 88vh; overflow: auto;
+      background: #fff; border: 1px solid var(--line); border-radius: 1.15rem;
+      padding: 1rem 1rem 1.15rem;
+    }
+    .sheet-top { display: flex; justify-content: space-between; gap: 1rem; align-items: flex-start; }
+    .sheet-top h3 { margin: 0; font-size: 1.05rem; }
+    .sheet-top p { margin: .3rem 0 0; color: var(--mute); font-size: .82rem; }
+    .x {
+      appearance: none; border: 0; background: #eef4ff; color: var(--ink);
+      width: 2rem; height: 2rem; border-radius: 999px; cursor: pointer; font-size: 1.1rem;
+    }
+    .gallery {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 1rem 0;
+    }
+    @media (max-width: 560px) { .gallery { grid-template-columns: repeat(3, 1fr); } }
+    .gallery button {
+      padding: 0; border: 1px solid var(--line); background: #fff; border-radius: .55rem; overflow: hidden; cursor: zoom-in;
+    }
+    .gallery img { display: block; width: 100%; aspect-ratio: 1; object-fit: cover; }
+    .sheet-link { display: inline-flex; color: var(--blue); font-size: .85rem; }
+    .zoomer {
+      position: fixed; inset: 0; z-index: 30; background: rgba(23,52,95,.65);
+      display: grid; place-items: center; padding: 1.2rem; cursor: zoom-out;
+    }
+    .zoomer[hidden] { display: none; }
+    .zoomer img { max-width: min(92vw, 28rem); max-height: 86vh; border-radius: .8rem; }
+    footer { text-align: center; color: var(--mute); font-size: .75rem; padding-top: 1.6rem; }
+    footer a { color: var(--accent); }
+    :focus-visible { outline: 2px solid var(--blue); outline-offset: 3px; }
+    @media (prefers-reduced-motion: reduce) {
+      * { animation: none !important; transition: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header>
+      <a class="stars" href="https://github.com/mmwmdxg/dsh-meme-new" target="_blank" rel="noreferrer">
+        <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8a8 8 0 0 0 5.47 7.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8 8 0 0 0 16 8c0-4.42-3.58-8-8-8"/></svg>
+        <span id="star-count">GitHub</span>
+      </a>
+      <div class="lang" role="group" aria-label="Language">
+        <button type="button" data-lang="zh" aria-pressed="true">中文</button>
+        <button type="button" data-lang="en" aria-pressed="false">EN</button>
+      </div>
+    </header>
+
+    <section class="stage">
+      <div>
+        <p class="kicker">dsh-meme</p>
+        <h1 class="poster" data-i="poster">跟 AI<br><em>斗图</em></h1>
+        <p class="sub" data-i="tagline">找得到、发得出、学得会</p>
+        <p class="lead" data-i="lead">从大肥鱼开始，给聊天加点表情。自己点图发，也能让 AI 接着斗图。</p>
+        <p class="cmd" data-i="installSteps">DSH 插件 → 添加插件 → 输入 dsh-meme</p>
+        <p class="meta"><a href="https://qm.qq.com/q/7AD2g70HqS" data-i="community">交流反馈群</a></p>
+      </div>
+
+      <div class="fight" id="fight">
+        <button class="sticker s1" data-cap="得意" type="button" aria-label="发送大肥鱼得意表情"><img src="./dafeiyu/deyi.jpg" alt="大肥鱼得意"></button>
+        <button class="sticker s2" data-cap="下班只想躺平" type="button" aria-label="发送大肥鱼躺平表情"><img src="./dafeiyu/tangping.jpg" alt="大肥鱼躺平"></button>
+        <button class="sticker s3" data-cap="比心" type="button" aria-label="发送大肥鱼比心表情"><img src="./dafeiyu/bixin.jpg" alt="大肥鱼比心"></button>
+        <button class="sticker s4" data-cap="干饭" type="button" aria-label="发送大肥鱼干饭表情"><img src="./dafeiyu/ganfan.jpg" alt="大肥鱼干饭"></button>
+        <button class="sticker s5" data-cap="疑问" type="button" aria-label="发送大肥鱼疑问表情"><img src="./dafeiyu/wenhao.jpg" alt="大肥鱼疑问"></button>
+        <div class="phone">
+          <div class="phone-bar"><span data-i="chat">对话</span><span class="dot"></span></div>
+          <div class="thread" id="thread">
+            <p class="hint-tap" data-i="tap">点一张贴纸，丢进来</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="rest">
+      <figure class="shot">
+        <img src="./chat-example.png" alt="真实对话里发表情包" />
+      </figure>
+      <section class="packs">
+        <h2 data-i="packs">表情包合集</h2>
+        <p class="hint" data-i="how">点开就能预览。自己的仓库加上 topic <code>dsh-meme-pack</code>，并放 <code>previews/</code> 图片，这里会自动出现。</p>
+        <div class="grid" id="pack-list"></div>
+      </section>
+      <footer>MIT · <a href="https://github.com/mmwmdxg/dsh-meme-new">mmwmdxg/dsh-meme-new</a> (fork of yyh-001/dsh-meme)</footer>
+    </div>
+  </div>
+
+  <div class="modal" id="modal" hidden>
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <div class="sheet-top">
+        <div>
+          <h3 id="modal-title"></h3>
+          <p id="modal-desc"></p>
+        </div>
+        <button class="x" id="modal-close" type="button" aria-label="关闭">×</button>
+      </div>
+      <div class="gallery" id="gallery"></div>
+      <a class="sheet-link" id="modal-link" href="#" target="_blank" rel="noreferrer"></a>
+    </div>
+  </div>
+  <div class="zoomer" id="zoomer" hidden><img alt=""></div>
+
+  <script>
+    const TEXT = {
+      zh: {
+        posterHTML: "跟 AI<br><em>斗图</em>",
+        tagline: "找得到、发得出、学得会",
+        lead: "从大肥鱼开始，给聊天加点表情。自己点图发，也能让 AI 接着斗图。",
+        installSteps: "DSH 插件 → 添加插件 → 输入 dsh-meme",
+        community: "交流反馈群",
+        chat: "对话",
+        tap: "点一张贴纸，丢进来",
+        packs: "表情包合集",
+        how: "点开就能预览。自己的仓库加上 topic dsh-meme-pack，并放 previews/ 图片，这里会自动出现。",
+        empty: "还没有其他合集。你的仓库可以是下一个。",
+        fail: "暂时读不到合集。",
+        builtinName: "大肥鱼",
+        builtin: "内置大肥鱼图库，24 张。得意、干饭、比心、躺平……装好就能用。",
+        preview: "预览",
+        openRepo: "打开仓库",
+        stars: (n) => n + " stars",
+      },
+      en: {
+        posterHTML: "meme fight<br><em>with AI</em>",
+        tagline: "find · send · learn",
+        lead: "Start with Big Fat Fish. Pick a meme yourself, or let your AI join the fun.",
+        installSteps: "DSH Plugins → Add plugin → enter dsh-meme",
+        community: "Community & feedback group",
+        chat: "chat",
+        tap: "Tap a sticker. Throw it in.",
+        packs: "Sticker packs",
+        how: "Tap a pack to preview. Add topic dsh-meme-pack and a previews/ folder to show up here.",
+        empty: "No other packs yet. Yours can be next.",
+        fail: "Could not load packs.",
+        builtinName: "Big Fat Fish",
+        builtin: "24 bundled Big Fat Fish memes. Celebrate, eat, send a heart or flop down — ready to use.",
+        preview: "Preview",
+        openRepo: "Open repo",
+        stars: (n) => n + " stars",
+      },
+    }
+
+    let lang = "zh"
+    function applyLang() {
+      const t = TEXT[lang]
+      document.documentElement.lang = lang === "zh" ? "zh-CN" : "en"
+      document.querySelectorAll("[data-i]").forEach((el) => {
+        const key = el.getAttribute("data-i")
+        if (key === "poster") el.innerHTML = t.posterHTML
+        else if (typeof t[key] === "string") el.textContent = t[key]
+      })
+      document.querySelectorAll(".lang button").forEach((b) => {
+        b.setAttribute("aria-pressed", b.dataset.lang === lang ? "true" : "false")
+      })
+      const n = document.getElementById("star-count").dataset.n
+      if (n) document.getElementById("star-count").textContent = t.stars(Number(n).toLocaleString())
+    }
+    document.querySelector(".lang").addEventListener("click", (e) => {
+      const btn = e.target.closest("button[data-lang]")
+      if (!btn) return
+      lang = btn.dataset.lang
+      applyLang()
+      renderPacks(window.__packs, window.__packErr)
+    })
+
+    const thread = document.getElementById("thread")
+    document.getElementById("fight").addEventListener("click", (e) => {
+      const btn = e.target.closest(".sticker")
+      if (!btn) return
+      const cap = btn.dataset.cap
+      const src = btn.querySelector("img").src
+      thread.innerHTML = '<div class="bubble"><img src="' + esc(src) + '" alt="' + esc(cap) + '"><p>' + esc(cap) + "</p></div>"
+    })
+
+    fetch("https://api.github.com/repos/mmwmdxg/dsh-meme-new")
+      .then((r) => r.ok ? r.json() : null)
+      .then((repo) => {
+        if (!repo) return
+        const el = document.getElementById("star-count")
+        el.dataset.n = repo.stargazers_count
+        el.textContent = TEXT[lang].stars(Number(repo.stargazers_count).toLocaleString())
+      }).catch(() => {})
+
+    const BUILTIN_IMGS = [
+      "deyi", "ganfan", "bixin", "tangping", "ok", "wenhao", "shengqi", "wuyu",
+      "haixiu", "shuijiao", "zaoshanghao", "maozhua", "piaole", "buyao", "toukan",
+      "jiazai", "jiaban", "huachi", "yaoqian", "qiurao", "yun", "zhenjing", "xia", "xianqi",
+    ].map((name) => "./dafeiyu/" + name + ".jpg")
+    const IMG_RE = /\.(png|jpe?g|gif|webp)$/i
+    const builtinPack = {
+      id: "dafeiyu-001",
+      full_name: "dafeiyu-001",
+      html_url: "https://github.com/mmwmdxg/dsh-meme-new",
+      builtin: true,
+      previews: BUILTIN_IMGS,
+    }
+
+    function esc(s) {
+      return String(s || "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]))
+    }
+    function fmtStars(n) { return n >= 1000 ? (Math.round(n / 100) / 10) + "k" : String(n) }
+
+    async function loadPreviews(repo) {
+      if (repo.builtin) return BUILTIN_IMGS.slice()
+      if (repo.previews && repo.previews.length) return repo.previews.slice()
+      const [owner, name] = repo.full_name.split("/")
+      const branch = repo.default_branch || "main"
+      for (const dir of ["previews", "preview", "stickers"]) {
+        try {
+          const r = await fetch("https://api.github.com/repos/" + owner + "/" + name + "/contents/" + dir)
+          if (!r.ok) continue
+          const files = await r.json()
+          if (!Array.isArray(files)) continue
+          const urls = files.filter((f) => f.type === "file" && IMG_RE.test(f.name)).slice(0, 24).map((f) => f.download_url).filter(Boolean)
+          if (urls.length) return urls
+        } catch {}
+      }
+      try {
+        const r = await fetch("https://api.github.com/repos/" + owner + "/" + name + "/git/trees/" + branch + "?recursive=1")
+        if (!r.ok) return []
+        const data = await r.json()
+        const files = (data.tree || []).filter((t) => t.type === "blob" && IMG_RE.test(t.path) && t.size && t.size < 2500000)
+        const pref = files.filter((t) => /(?:^|\/)(previews?|stickers|memes)\//i.test(t.path))
+        const pool = pref.length ? pref : files
+        return pool.slice(0, 24).map((t) => "https://raw.githubusercontent.com/" + owner + "/" + name + "/" + branch + "/" + t.path.split("/").map(encodeURIComponent).join("/"))
+      } catch { return [] }
+    }
+
+    function mosaicHtml(urls) {
+      if (!urls || !urls.length) return '<div class="ghost-mosaic"></div>'
+      return '<div class="mosaic">' + urls.slice(0, 6).map((u) => '<img src="' + esc(u) + '" alt="">').join("") + "</div>"
+    }
+
+    function renderPacks(items, err) {
+      const root = document.getElementById("pack-list")
+      const t = TEXT[lang]
+      const packs = [builtinPack].concat(items || [])
+      root.innerHTML = packs.map((p, i) => {
+        const title = p.builtin ? t.builtinName : p.full_name
+        const desc = p.builtin ? t.builtin : (p.description || "")
+        const count = (p.previews && p.previews.length) ? t.preview + " " + p.previews.length : t.preview
+        const star = p.builtin || p.stargazers_count == null ? "" : " · ★ " + fmtStars(p.stargazers_count)
+        return '<button class="pack" type="button" data-i="' + i + '">' + mosaicHtml(p.previews) +
+          "<strong>" + esc(title) + "</strong><p>" + esc(desc) + '</p><div class="row">' + count + star + "</div></button>"
+      }).join("") + ((items && items.length) ? "" : '<p class="empty">' + (err ? t.fail : t.empty) + "</p>")
+      window.__packList = packs
+    }
+
+    function openPack(p) {
+      const t = TEXT[lang]
+      document.getElementById("modal-title").textContent = p.builtin ? t.builtinName : p.full_name
+      document.getElementById("modal-desc").textContent = p.builtin ? t.builtin : (p.description || "")
+      const link = document.getElementById("modal-link")
+      link.href = p.html_url
+      link.textContent = t.openRepo
+      const urls = p.previews || []
+      document.getElementById("gallery").innerHTML = urls.map((u) =>
+        '<button type="button"><img src="' + esc(u) + '" alt=""></button>'
+      ).join("") || '<p class="empty">' + t.fail + "</p>"
+      document.getElementById("modal").hidden = false
+    }
+
+    document.getElementById("pack-list").addEventListener("click", (e) => {
+      const btn = e.target.closest(".pack")
+      if (!btn) return
+      const p = (window.__packList || [])[Number(btn.dataset.i)]
+      if (p) openPack(p)
+    })
+    document.getElementById("modal-close").onclick = () => { document.getElementById("modal").hidden = true }
+    document.getElementById("modal").addEventListener("click", (e) => {
+      if (e.target.id === "modal") document.getElementById("modal").hidden = true
+    })
+    document.getElementById("gallery").addEventListener("click", (e) => {
+      const img = e.target.closest("img")
+      if (!img) return
+      const z = document.getElementById("zoomer")
+      z.querySelector("img").src = img.src
+      z.hidden = false
+    })
+    document.getElementById("zoomer").addEventListener("click", () => { document.getElementById("zoomer").hidden = true })
+    document.addEventListener("keydown", (e) => {
+      if (e.key !== "Escape") return
+      document.getElementById("zoomer").hidden = true
+      document.getElementById("modal").hidden = true
+    })
+
+    function hydrate(repos) {
+      const extra = (repos || []).filter((p) => p.full_name !== "mmwmdxg/dsh-meme-new")
+      extra.forEach((p) => { if (!p.previews) p.previews = [] })
+      window.__packs = extra
+      renderPacks(extra)
+      extra.forEach(async (p) => {
+        if (p.previews.length) return
+        p.previews = await loadPreviews(p)
+        renderPacks(window.__packs)
+      })
+    }
+
+    Promise.all([
+      fetch("https://api.github.com/search/repositories?q=topic:dsh-meme-pack&sort=stars").then((r) => r.ok ? r.json() : null).catch(() => null),
+      fetch("./packs.json?v=20261013-bluewhite", { cache: "no-store" }).then((r) => r.ok ? r.json() : []).catch((err) => { console.warn("Pack cache unavailable:", err.message); return [] })
+        .then((cached) => { hydrate(cached); return cached }),
+    ]).then(([live, cached]) => {
+      const merged = new Map((cached || []).map((p) => [p.full_name, p]))
+      for (const repo of (live && live.items) || []) {
+        const saved = merged.get(repo.full_name)
+        merged.set(repo.full_name, { ...saved, ...repo, previews: saved && saved.previews || [] })
+      }
+      hydrate([...merged.values()])
+    })
+
+    applyLang()
+    renderPacks([])
+    if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      setTimeout(() => document.querySelector(".s2").click(), 420)
+    }
+  </script>
+</body>
+</html>
