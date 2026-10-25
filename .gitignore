@@ -9,3 +9,7 @@ __pycache__/
 # 打包产物(可重新生成,不入库)
 *.tgz
 *-source.zip
+
+# 运行时产物:图库索引数据库由插件扫描时重建,不入库
+memes/*/index.db
+memes/*/index.db-journal
