@@ -13,3 +13,6 @@ __pycache__/
 # 运行时产物:图库索引数据库由插件扫描时重建,不入库
 memes/*/index.db
 memes/*/index.db-journal
+
+# 本地打出来的图库包(发 release 用，不入库)
+dist/
