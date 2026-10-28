@@ -122,6 +122,19 @@ export function isPrivateIPv6(raw) {
 }
 
 /**
+ * DNS 解析器可注入。
+ *
+ * 默认就是 node:dns 的 lookup；测试里换成固定答案，这样「本机 DNS 把 example.com
+ * 解析到内网」这种环境差异不会把 SSRF 守卫变成偶发红灯（守卫本身没问题，是测试不该联网）。
+ * 将来真要治 TOCTOU（校验时公网、请求时内网），也是从这里把解析结果钉住。
+ * @param {Function|null} fn 传函数=替换；传 null / 非函数=恢复默认
+ */
+let dnsLookupImpl = dnsLookup
+export function setDnsLookup(fn) {
+  dnsLookupImpl = typeof fn === 'function' ? fn : dnsLookup
+}
+
+/**
  * 校验一个待下载的图片 URL 是否指向公网。不是 http(s) / 指向本机或内网 / 域名解析
  * 落到内网段时抛错,调用方把 message 直接回给用户。
  *
@@ -153,7 +166,7 @@ export async function assertPublicImageUrl(raw) {
   }
   let addrs
   try {
-    addrs = await dnsLookup(host, { all: true })
+    addrs = await dnsLookupImpl(host, { all: true })
   } catch {
     return // 解析失败:交给 fetch 自己失败
   }

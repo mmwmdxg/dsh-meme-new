@@ -43,3 +43,15 @@
 - **同库拦、跨库提示**:同一图库内重复收录同一份字节(sha256 相同)会被拒绝并指出已有那张;别的库有同款只提示不拦——同图进两个库是合理用法。
 - **老图补哈希**:升级前入库的图没有 sha256,去重和 `meme_list duplicates` 都看不到它们。在图库页点一次「扫描新增」就会顺手补算(结果里会报 `hashed` 张数)。
 - **热度只在真发图时记**:`send_meme` 递出候选即 `hits+1`;发送方式为「纯文字」时不计(那是查候选拿描述,没发图)。
+
+## 8. 索引与文案:clone 下来要能跑
+
+`memes/*/index.db` 是 `.gitignore` 里的运行时产物,**仓库里没有**。而插件的 `MemesStore` 在缺 `index.db` 时是「不可用」,`apply()` 会提前返回——路由和工具一条都注册不上,`npm test` 大面积假红。所以:
+
+- `npm run build:index`(= `scripts/build-pack-index.mjs`)负责补:**只补缺的行**,已存在行走 `INSERT OR IGNORE`,`--force` 才重算 mtime/sha256。`pretest` 会先跑它,干净 clone 直接 `npm test` 就行。
+- **caption / keywords 不在 index.db 之外就没有了**:那是 AI 学图的产出,index.db 又不入库。想让 clone 出来还搜得到,必须给图库写一份 `memes/<pack>/captions.json`(`{ "<rel>": { caption, keywords } }`),脚本会读它并填进空行;**已有非空文案的行不会被覆盖**。
+- 新增内置图库时,顺手写 captions.json——不然新用户装 npm 包能搜、从 git 检出搜不到,同一个库两种表现。
+
+## 9. SSRF 守卫的 DNS 可注入
+
+`assertPublicImageUrl` 会真解析域名。测试里别指望它:`import { setDnsLookup } from '../index.js'` 后调 `setDnsLookup(async () => [{ address: '93.184.216.34', family: 4 }])`,把答案钉成公网。否则「本机 DNS 把 example.com 解析到保留地址」会让用例假红——守卫本身没错,是测试不该依赖网络。

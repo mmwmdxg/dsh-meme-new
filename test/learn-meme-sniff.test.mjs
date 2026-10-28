@@ -17,6 +17,11 @@ const home = mkdtempSync(join(tmpdir(), 'dsh-meme-sniff-'))
 process.env.DSH_MEME_HOME = home
 process.env.HOME = home
 
+// SSRF 守卫会真去解析域名。测试不该依赖本机 DNS：有的网络把 example.com 解析到
+// 保留地址（或者压根没网），守卫按设计拒绝，用例就假红。这里把解析器钉成公网地址。
+const { setDnsLookup } = await import('../index.js')
+setDnsLookup(async () => [{ address: '93.184.216.34', family: 4 }])
+
 // 临时图库根(带空索引):学图落盘落在临时目录,不碰仓库内置图库
 const root = join(home, '.dsh', 'meme-packs', 'test-pack')
 mkdirSync(root, { recursive: true })
