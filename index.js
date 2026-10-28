@@ -17,7 +17,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import { readFileSync, writeFileSync, unlinkSync, mkdirSync, existsSync, rmSync, readdirSync, renameSync, statSync } from 'node:fs'
 import { join, dirname, resolve, sep, basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { createHash } from 'node:crypto'
+import { createHash, createPublicKey, verify as cryptoVerify } from 'node:crypto'
 import { isIP } from 'node:net'
 import { inflateRawSync } from 'node:zlib'
 import { lookup as dnsLookup } from 'node:dns/promises'
@@ -119,6 +119,51 @@ export function isPrivateIPv6(raw) {
     return isPrivateIPv4([hi >> 8, hi & 255, lo >> 8, lo & 255].join('.'))
   }
   return false
+}
+
+/**
+ * 目录签名（ed25519, detached）。
+ *
+ * 解决的问题：图库目录（remote-packs.json / catalog.json）是从 GitHub raw 加一票镜像拉来的，
+ * 每条 entry 的 ZIP 有 sha256，但那个 sha256 本身也来自目录 —— 镜像同时换掉目录和包就自洽了，
+ * 校验形同虚设。签名把「目录字节」钉在一把只在你手里的私钥上：镜像可以拒服务、可以给旧文件，
+ * 但改不动内容。
+ *
+ * 形态：目录旁边放一个同名 `.sig`（base64 的 64 字节 ed25519 签名），插件内置公钥验签。
+ * 公钥不绑定域名 —— 镜像换多少域名都无所谓，认的是同一把钥匙。
+ *
+ * @param {string} raw base64 DER（SPKI）或 PEM
+ * @returns {import('node:crypto').KeyObject|null} 解析失败返回 null（当作未配置）
+ */
+export function loadCatalogPublicKey(raw) {
+  const s = String(raw == null ? '' : raw).trim()
+  if (!s) return null
+  try {
+    if (s.includes('BEGIN PUBLIC KEY')) return createPublicKey(s)
+    // 否则当 base64 的 DER(SPKI)：注意不能 decode 成 utf8 再当 PEM，DER 是二进制
+    const der = Buffer.from(s, 'base64')
+    if (!der.length) return null
+    return createPublicKey({ key: der, format: 'der', type: 'spki' })
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 验签。签名覆盖的是**目录文件的原始字节**（解析前），所以改一个空格都会失败。
+ * @param {Buffer} bodyBuf 目录文件字节
+ * @param {string} sigBase64 `.sig` 的内容（base64，允许换行）
+ * @param {import('node:crypto').KeyObject|null} publicKey loadCatalogPublicKey 的结果
+ */
+export function verifyCatalogSignature(bodyBuf, sigBase64, publicKey) {
+  if (!publicKey || !bodyBuf || !bodyBuf.length) return false
+  const sig = Buffer.from(String(sigBase64 == null ? '' : sigBase64).replace(/\s+/g, ''), 'base64')
+  if (!sig.length) return false
+  try {
+    return cryptoVerify(null, bodyBuf, publicKey, sig)
+  } catch {
+    return false
+  }
 }
 
 /**
@@ -1786,6 +1831,16 @@ export function apply(ctx, config) {
     }
     /** 解析目录 JSON:支持裸数组与 { packs: [] },过滤掉没有下载地址的脏条目。 */
     const readDirectoryPayload = async (res) => validDirectoryEntries(await res.json())
+    /**
+     * 目录信任锚:配了公钥就强制验签,没配就保持旧行为(并允许用户自己配)。
+     * 公钥来源:插件 config.catalogPubkey,或环境变量 DSH_MEME_CATALOG_PUBKEY(方便先试后写进配置)。
+     */
+    let catalogKeyCache = { raw: null, key: null }
+    const catalogKey = () => {
+      const raw = String((config && config.catalogPubkey) || process.env.DSH_MEME_CATALOG_PUBKEY || '').trim()
+      if (catalogKeyCache.raw !== raw) catalogKeyCache = { raw, key: loadCatalogPublicKey(raw) }
+      return catalogKeyCache.key
+    }
     /** 同一层候选并发竞速:谁先返回合法目录用谁,其余请求中止(被墙直链不会拖住整个面板)。 */
     const raceDirectoryUrls = async (cands, perAttemptTimeout = REMOTE_DIR_ATTEMPT_TIMEOUT) => {
       const errors = []
@@ -1799,7 +1854,26 @@ export function apply(ctx, config) {
             redirect: 'follow',
           })
           if (!res.ok) throw new Error('HTTP ' + res.status)
-          return { ok: true, entries: await readDirectoryPayload(res), source: u }
+          // 签名覆盖的是原始字节,所以先拿 text 再解析(不能让 res.json 吃掉一次读取)
+          const body = Buffer.from(await res.text(), 'utf8')
+          const key = catalogKey()
+          if (key) {
+            const sigRes = await fetch(withCacheBust(u + '.sig'), {
+              signal: AbortSignal.any([ctrl.signal, AbortSignal.timeout(Math.max(1000, perAttemptTimeout))]),
+              redirect: 'follow',
+            })
+            if (!sigRes.ok) throw new Error('目录缺签名(.sig HTTP ' + sigRes.status + ')')
+            if (!verifyCatalogSignature(body, await sigRes.text(), key)) {
+              throw new Error('目录签名不匹配(内容被改过或签名过期)')
+            }
+          }
+          let payload
+          try {
+            payload = JSON.parse(body.toString('utf8'))
+          } catch {
+            throw new Error('目录不是合法 JSON')
+          }
+          return { ok: true, entries: validDirectoryEntries(payload), source: u }
         } catch (error) {
           errors.push(u + ' → ' + shortFetchError(error))
           throw error

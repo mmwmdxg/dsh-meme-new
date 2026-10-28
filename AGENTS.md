@@ -55,3 +55,22 @@
 ## 9. SSRF 守卫的 DNS 可注入
 
 `assertPublicImageUrl` 会真解析域名。测试里别指望它:`import { setDnsLookup } from '../index.js'` 后调 `setDnsLookup(async () => [{ address: '93.184.216.34', family: 4 }])`,把答案钉成公网。否则「本机 DNS 把 example.com 解析到保留地址」会让用例假红——守卫本身没错,是测试不该依赖网络。
+
+## 10. 目录签名(ed25519):目录被镜像篡改也认得出来
+
+**为什么需要**:目录从 GitHub raw 加一票镜像拉,每条 entry 的 ZIP 有 sha256,但那个 sha256 也来自目录 —— 镜像同时换掉目录和包就自洽了。
+
+**形态**:目录旁边一个同名 `.sig`(base64 的 64 字节签名),签名覆盖**目录文件原始字节**;插件用内置/配置的公钥验签。公钥不绑域名 —— 镜像换多少域名都认同一把钥匙。
+
+```bash
+node scripts/sign-catalog.mjs keygen ~/.dsh/dsh-meme-catalog.key   # 只跑一次，私钥留本机
+node scripts/sign-catalog.mjs sign   docs/remote-packs.json ~/.dsh/dsh-meme-catalog.key
+node scripts/sign-catalog.mjs verify docs/remote-packs.json <公钥base64>
+```
+
+- 插件侧开关:`catalogPubkey`(插件 config)或 `DSH_MEME_CATALOG_PUBKEY`(环境变量,先试后写配置)。没配就不验,行为和以前一致。
+- 配了就**强制**:拿不到 `.sig`、验不过、签名是旧的,一律按「这个镜像不可用」处理并换下一个候选;全挂走磁盘缓存。**绝不回退到未签名内容** —— 那等于没签。
+- 目录改一次就要重签一次(`sign` 覆盖同名 `.sig`)。
+- 换钥匙 = 已装旧版客户端从此验不过。**私钥要备份,公钥换了要发版。**
+
+判据:`verify` 通过;把目录尾部加一个空格再验 → 必须失败(2026-10-28 实测:通过→失败→还原后又通过)。
