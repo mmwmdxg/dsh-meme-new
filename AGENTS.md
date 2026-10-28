@@ -74,3 +74,7 @@ node scripts/sign-catalog.mjs verify docs/remote-packs.json <公钥base64>
 - 换钥匙 = 已装旧版客户端从此验不过。**私钥要备份,公钥换了要发版。**
 
 判据:`verify` 通过;把目录尾部加一个空格再验 → 必须失败(2026-10-28 实测:通过→失败→还原后又通过)。
+
+## 11. 发布一个包
+
+造包 → 填目录 → 签名 → 发 release → 四道验证，完整流程见 `docs/PUBLISHING.md`（含这台机器上 git/gh 的坑）。只改文案走该文第五节，不用重新打包。
