@@ -76,6 +76,29 @@
 }
 ```
 
+
+### 文案外挂（captionsUrl）：改文案不用重打包
+
+图片几乎不动、caption/keywords 天天改。把两者拆开：ZIP 只负责图，文案单独托管一份 JSON，目录里指过去。
+
+```json
+{
+  "id": "dafeiyu-001",
+  "archiveUrl": "https://github.com/owner/repo/releases/download/<tag>/<file>.zip",
+  "sha256": "……",
+  "captionsUrl": "https://raw.githubusercontent.com/owner/repo/main/memes/dafeiyu-001/captions.json",
+  "captionsSha256": "……"
+}
+```
+
+格式与图库目录里的 `captions.json` 相同：`{ "<相对路径>": { "caption": "…", "keywords": "…" } }`，key 写 `memes/x/y.jpg` 或 `x/y.jpg` 都认。
+
+- **装完/更新后自动拉一次**，按行合并进已安装的 `index.db`；拉不到、哈希不对、JSON 坏了 → 只丢文案，图照常可用（记 warning，不回滚安装）。
+- **只更新已有行，绝不新建行** —— 文案不能凭空造出一张不存在的图。
+- 面板的「刷新文案」（API `refreshCaptions`）会整段覆盖，用于你在别处改完文案后同步；装完那次也是覆盖语义。
+- 改文案 = 改这份 JSON + 目录里换 `captionsSha256` + 重签目录。**ZIP 一个字节都不用动**。
+- 换图 = 照旧发新 ZIP（旧包留在 release 里别动，目录升 version + 新 sha256）。
+
 `archiveUrl` 指向插件「导出图库」生成的未压缩 ZIP（根目录含 `index.db`、`manifest.json`、`memes/`）。插件下载后限制 ZIP ≤100MB，校验 `sha256`，并校验 ZIP 内 `manifest.json.id` 与目录 `id` 一致，再原子安装到用户扫描目录。旧版逐图下载条目仍可写成：
 
 ```json

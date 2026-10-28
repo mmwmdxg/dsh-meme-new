@@ -11,8 +11,16 @@
       "archiveUrl": "https://github.com/mmwmdxg/dsh-meme-new/releases/download/dafeiyu-001-v1.3.0/dafeiyu-001-1.3.0.zip",
       "sha256": "b6dd44a1b718dd0d1dcf93646e488bb4b00d31dbaa457a5b35d4d507de77b67a",
       "preview": "https://mmwmdxg.github.io/dsh-meme-new/dafeiyu/deyi.jpg",
-      "keywords": ["大肥鱼", "鲸鱼娘", "DeepSeek", "chibi", "表情包"],
-      "license": "personal"
+      "keywords": [
+        "大肥鱼",
+        "鲸鱼娘",
+        "DeepSeek",
+        "chibi",
+        "表情包"
+      ],
+      "license": "personal",
+      "captionsUrl": "https://raw.githubusercontent.com/mmwmdxg/dsh-meme-new/main/memes/dafeiyu-001/captions.json",
+      "captionsSha256": "f05fb875d4e73491aebc0a13acaf42d166bcd37aebf0a668b687c043363751e6"
     }
   ]
 }

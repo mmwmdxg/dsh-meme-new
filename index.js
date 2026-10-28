@@ -167,6 +167,68 @@ export function verifyCatalogSignature(bodyBuf, sigBase64, publicKey) {
 }
 
 /**
+ * 把一份「文案外挂」（captionsUrl 指的那份 JSON）合并进**已安装**的图库索引。
+ *
+ * 为什么要有这个：caption / keywords 存在 index.db 里，而 index.db 在 ZIP 里 ——
+ * 改一句文案就得重打包、重发 release、重签目录。图片几乎不动、文案天天改，
+ * 这两件事该拆开：包只管图，文案走一个几 KB 的 JSON，改完只重签目录。
+ *
+ * 语义（重要）：
+ * - **只更新已有行**，绝不新建行 —— 文案不能凭空造出一张不存在的图；
+ * - 默认 `overwrite:false`：只在 caption 和 keywords **都为空**时才填，不动用户在面板里手改过的；
+ * - `overwrite:true`：显式「刷新文案」时才整段覆盖；
+ * - 认三种 key 写法：`memes/x/y.jpg`、`x/y.jpg`、相对图库根的路径。
+ *
+ * @param {string} root 图库目录（含 index.db）
+ * @param {object} captions `{ rel: { caption, keywords } }`
+ * @param {{overwrite?: boolean}} [opts]
+ * @returns {{updated: number, kept: number, missing: number}} missing = captions 里对不上任何行的 key 数
+ */
+export function mergeCaptions(root, captions, { overwrite = false } = {}) {
+  const out = { updated: 0, kept: 0, missing: 0 }
+  if (!captions || typeof captions !== 'object' || Array.isArray(captions)) return out
+  const db = new DatabaseSync(join(root, 'index.db'))
+  try {
+    const rows = db.prepare('SELECT path, caption, keywords FROM memes').all()
+    const byPath = new Map(rows.map((r) => [String(r.path), r]))
+    const used = new Set()
+    const update = db.prepare('UPDATE memes SET caption = ?, keywords = ? WHERE path = ?')
+    db.exec('BEGIN')
+    try {
+      for (const row of rows) {
+        const rel = String(row.path || '')
+        const key = captions[rel] != null
+          ? rel
+          : captions[rel.replace(/^memes\//, '')] != null ? rel.replace(/^memes\//, '') : null
+        const meta = key ? captions[key] : null
+        if (!meta || typeof meta !== 'object') continue
+        used.add(key)
+        const curCaption = String(row.caption == null ? '' : row.caption)
+        const curKeywords = String(row.keywords == null ? '' : row.keywords)
+        if (!overwrite && (curCaption !== '' || curKeywords !== '')) { out.kept++; continue }
+        const nextCaption = meta.caption == null ? curCaption : String(meta.caption)
+        const nextKeywords = meta.keywords == null ? curKeywords : String(meta.keywords)
+        if (nextCaption === curCaption && nextKeywords === curKeywords) { out.kept++; continue }
+        update.run(nextCaption, nextKeywords, rel)
+        out.updated++
+      }
+      db.exec('COMMIT')
+    } catch (error) {
+      db.exec('ROLLBACK')
+      throw error
+    }
+    for (const key of Object.keys(captions)) {
+      if (used.has(key)) continue
+      const norm = key.replace(/^memes\//, '')
+      if (!byPath.has(norm) && !byPath.has('memes/' + norm)) out.missing++
+    }
+    return out
+  } finally {
+    db.close()
+  }
+}
+
+/**
  * DNS 解析器可注入。
  *
  * 默认就是 node:dns 的 lookup；测试里换成固定答案，这样「本机 DNS 把 example.com
@@ -2114,6 +2176,53 @@ export function apply(ctx, config) {
     }
 
     /** ZIP 安装走任务制:客户端轮询 remoteJobStatus 就能画下载进度条。 */
+    /** 文案外挂的大小上限：一个 500 条的图库也就几十 KB，4MB 已经非常宽松 */
+    const CAPTIONS_MAX = 4 * 1024 * 1024
+    /** 目录里按 id 找回某条 entry（装完/更新后要用它的 captionsUrl） */
+    const catalogEntryFor = (id) => {
+      const wanted = packSlug(id)
+      if (!wanted) return null
+      const live = remoteDirCache && remoteDirCache.data && Array.isArray(remoteDirCache.data.entries)
+        ? remoteDirCache.data.entries : []
+      const hit = live.find((e) => e && packSlug(e.id) === wanted)
+      if (hit) return hit
+      try {
+        const cached = readCatalogCache()
+        const list = cached && Array.isArray(cached.entries) ? cached.entries : []
+        return list.find((e) => e && packSlug(e.id) === wanted) || null
+      } catch { return null }
+    }
+    /**
+     * 拉「文案外挂」并合并进已装好的图库。失败只损失文案，不影响图 —— 调用方按 warning 处理。
+     * overwrite 默认 true：这条通道就是「刷新文案」，用户在面板里手改的会被覆盖（这是显式动作）。
+     */
+    const applyCaptionsFor = async (rootDir, entry, { overwrite = true } = {}) => {
+      if (!entry || !entry.captionsUrl) return null
+      if (!/^https?:\/\//i.test(String(entry.captionsUrl))) throw new Error('captionsUrl 必须是 http(s) 链接')
+      const expected = String(entry.captionsSha256 || '').trim().toLowerCase()
+      if (expected && !/^[0-9a-f]{64}$/.test(expected)) throw new Error('captionsSha256 格式无效')
+      let lastError = ''
+      for (const u of assetMirrors(entry.captionsUrl)) {
+        try {
+          const res = await fetch(u, { signal: AbortSignal.timeout(15000), redirect: 'follow' })
+          if (!res.ok) { lastError = 'HTTP ' + res.status; continue }
+          const buf = Buffer.from(await res.arrayBuffer())
+          if (!buf.length) { lastError = '空文件'; continue }
+          if (buf.byteLength > CAPTIONS_MAX) throw new Error('文案文件超过 4MB,拒绝处理')
+          const actual = shaOfBuffer(buf)
+          if (expected && actual !== expected) { lastError = 'SHA-256 不一致'; continue }
+          const payload = JSON.parse(buf.toString('utf8'))
+          const merged = mergeCaptions(rootDir, payload, { overwrite })
+          dropStoreCache(rootDir)
+          if (resolve(rootDir) === resolve(memes.root)) memes.refresh()
+          return merged
+        } catch (error) {
+          if (error instanceof Error && /超过 4MB/.test(error.message)) throw error
+          lastError = error instanceof Error ? error.message : String(error)
+        }
+      }
+      throw new Error('文案下载失败: ' + (lastError || '未知错误'))
+    }
     const startArchiveJob = ({ archiveUrl, sha256, requestedId, name, version }) => {
       const jobId = 'ra-' + Date.now().toString(36) + '-' + (++remoteJobSeq)
       const job = {
@@ -2139,6 +2248,13 @@ export function apply(ctx, config) {
           job.added = done.total
           job.state = 'done'
           job.message = '安装完成,已切换到「' + done.displayName + '」'
+          // 文案外挂:包只管图,文案单独拉一次。失败只记 warning,不回滚安装(图是好的)
+          try {
+            const merged = await applyCaptionsFor(join(packsDirNow(), done.id), catalogEntryFor(done.id))
+            if (merged && merged.updated) job.message += '，文案 ' + merged.updated + ' 条'
+          } catch (error) {
+            job.warnings.push('文案未更新: ' + (error instanceof Error ? error.message : String(error)))
+          }
         } catch (error) {
           job.state = 'error'
           job.message = error instanceof Error ? error.message : String(error)
@@ -2777,7 +2893,15 @@ export function apply(ctx, config) {
               const next = remoteSubs().filter((s) => s && s.id !== id)
               next.unshift({ ...sub, sha256: downloaded.sha256, name: displayName, version, total, lastSync: Date.now() })
               writeSettings({ remoteSubs: next })
-              json(res, { ok: true, ...packPayload(), total, message: '更新成功,已切换到「' + displayName + '」' })
+              // 更新完顺手刷一次文案外挂（和首次安装同一条通道）
+              let captionsNote = ''
+              try {
+                const merged = await applyCaptionsFor(join(packsDirNow(), id), catalogEntryFor(id))
+                if (merged && merged.updated) captionsNote = '，文案 ' + merged.updated + ' 条'
+              } catch (error) {
+                captionsNote = '（文案未更新: ' + (error instanceof Error ? error.message : String(error)) + '）'
+              }
+              json(res, { ok: true, ...packPayload(), total, message: '更新成功,已切换到「' + displayName + '」' + captionsNote })
               return
             }
             if (!sub.url) throw new Error('订阅缺少更新地址: ' + id)
@@ -2791,6 +2915,14 @@ export function apply(ctx, config) {
               }
             }
             json(res, { ok: true, ...jobSnapshot(startRemoteJob(manifest, sub.url, 'update')) })
+          } else if (op === 'refreshCaptions') {
+            const id = packSlug(body.packId) || packSlug(activePackId())
+            const pack = listAllPacks().find((p) => p.id === id)
+            if (!pack) throw new Error('图库不存在: ' + id)
+            const entry = catalogEntryFor(id)
+            if (!entry || !entry.captionsUrl) throw new Error('该图库的目录条目没有 captionsUrl: ' + id)
+            const merged = await applyCaptionsFor(pack.path, entry, { overwrite: body.overwrite !== false })
+            json(res, { ok: true, id, ...merged })
           } else if (op === 'getMemeRoot') {
 
             json(res, { ok: true, ...packPayload() })
